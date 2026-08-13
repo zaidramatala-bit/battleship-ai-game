@@ -1,8 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { attack, isCellSunk } from "./attack";
+import { attack, isCellSunk, type AttackOutcome } from "./attack";
 import { createEmptyBoard, placeShip } from "./board";
 import { FLEET } from "./ships";
-import type { Board } from "./types";
+import type { Board, Coord } from "./types";
+
+/** Fires and insists the shot landed, so the result can be inspected. */
+function fire(board: Board, coord: Coord) {
+  const outcome = attack(board, coord);
+  if (!outcome.accepted) throw new Error("expected the shot to be accepted");
+  return outcome;
+}
+
+/** Narrowing helper for the refusal branch. */
+function refusal(outcome: AttackOutcome) {
+  expect(outcome.accepted).toBe(false);
+  return outcome;
+}
 
 const destroyer = FLEET[4]; // length 2
 const cruiser = FLEET[2]; // length 3
@@ -18,15 +31,14 @@ function boardWithDestroyer(): Board {
 
 describe("attack", () => {
   it("records a miss on empty water", () => {
-    const outcome = attack(boardWithDestroyer(), { row: 0, col: 0 });
-    expect(outcome.accepted).toBe(true);
+    const outcome = fire(boardWithDestroyer(), { row: 0, col: 0 });
     expect(outcome.result).toBe("miss");
     expect(outcome.sunkShip).toBeNull();
     expect(outcome.board.shots).toHaveLength(1);
   });
 
   it("records a hit and damages the ship", () => {
-    const outcome = attack(boardWithDestroyer(), { row: 2, col: 2 });
+    const outcome = fire(boardWithDestroyer(), { row: 2, col: 2 });
     expect(outcome.result).toBe("hit");
     expect(outcome.sunkShip).toBeNull();
     expect(outcome.board.ships[0].hits).toHaveLength(1);
@@ -40,26 +52,33 @@ describe("attack", () => {
   });
 
   it("reports a sinking only on the final hit", () => {
-    const first = attack(boardWithDestroyer(), { row: 2, col: 2 });
+    const first = fire(boardWithDestroyer(), { row: 2, col: 2 });
     expect(first.sunkShip).toBeNull();
-    const second = attack(first.board, { row: 2, col: 3 });
+    const second = fire(first.board, { row: 2, col: 3 });
     expect(second.sunkShip?.name).toBe("Destroyer");
     expect(isCellSunk(second.board, { row: 2, col: 3 })).toBe(true);
   });
 
   it("refuses a repeated shot and changes nothing", () => {
-    const first = attack(boardWithDestroyer(), { row: 5, col: 5 });
-    const second = attack(first.board, { row: 5, col: 5 });
-    expect(second.accepted).toBe(false);
+    const first = fire(boardWithDestroyer(), { row: 5, col: 5 });
+    const second = refusal(attack(first.board, { row: 5, col: 5 }));
     expect(second.board).toBe(first.board);
     expect(second.board.shots).toHaveLength(1);
   });
 
   it("refuses a repeated shot on a square that was a hit", () => {
-    const first = attack(boardWithDestroyer(), { row: 2, col: 2 });
-    const second = attack(first.board, { row: 2, col: 2 });
-    expect(second.accepted).toBe(false);
+    const first = fire(boardWithDestroyer(), { row: 2, col: 2 });
+    const second = refusal(attack(first.board, { row: 2, col: 2 }));
     expect(second.board.ships[0].hits).toHaveLength(1);
+  });
+
+  it("reports no result at all for a refused shot", () => {
+    // Regression: a refused shot used to describe itself as a miss, which a
+    // caller that forgot to check `accepted` would have believed.
+    const first = fire(boardWithDestroyer(), { row: 2, col: 2 });
+    const second = attack(first.board, { row: 2, col: 2 });
+    expect(second).toEqual({ accepted: false, board: first.board });
+    expect("result" in second).toBe(false);
   });
 });
 
@@ -76,17 +95,17 @@ describe("win detection", () => {
       { row: 2, col: 1 },
     ];
     for (const shot of shots) {
-      const outcome = attack(board, shot);
+      const outcome = fire(board, shot);
       expect(outcome.allSunk).toBe(false);
       board = outcome.board;
     }
 
-    const final = attack(board, { row: 2, col: 2 });
+    const final = fire(board, { row: 2, col: 2 });
     expect(final.allSunk).toBe(true);
   });
 
   it("does not report a win on an empty board", () => {
-    const outcome = attack(createEmptyBoard(), { row: 0, col: 0 });
+    const outcome = fire(createEmptyBoard(), { row: 0, col: 0 });
     expect(outcome.allSunk).toBe(false);
   });
 });

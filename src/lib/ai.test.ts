@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createAiMemory, nextShot, registerResult } from "./ai";
+import { createAiMemory, isTargeting, nextShot, registerResult } from "./ai";
 import { attack } from "./attack";
 import { coordKey, isOnBoard, randomBoard, sameCoord } from "./board";
 import { TOTAL_SHIP_CELLS } from "./ships";
@@ -11,6 +11,21 @@ function shotsFrom(coords: Coord[], result: "hit" | "miss" = "miss"): Shot[] {
 
 function isAdjacent(a: Coord, b: Coord): boolean {
   return Math.abs(a.row - b.row) + Math.abs(a.col - b.col) === 1;
+}
+
+/** How often each square is chosen over many draws, keyed "row,col". */
+function shotDistribution(
+  shots: Shot[],
+  memory: AiMemory,
+  draws: number,
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (let draw = 0; draw < draws; draw += 1) {
+    const coord = nextShot(shots, memory)!;
+    const key = coordKey(coord);
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+  return counts;
 }
 
 describe("hunt mode", () => {
@@ -56,7 +71,7 @@ describe("hunt mode", () => {
 describe("target mode", () => {
   it("fires next to a single hit", () => {
     const hit = { row: 4, col: 4 };
-    const memory: AiMemory = { mode: "target", activeHits: [hit] };
+    const memory: AiMemory = { activeHits: [hit] };
     for (let run = 0; run < 50; run += 1) {
       const coord = nextShot(shotsFrom([hit], "hit"), memory);
       expect(isAdjacent(coord!, hit)).toBe(true);
@@ -65,7 +80,7 @@ describe("target mode", () => {
 
   it("never queues squares off the board when the hit is in a corner", () => {
     const hit = { row: 0, col: 0 };
-    const memory: AiMemory = { mode: "target", activeHits: [hit] };
+    const memory: AiMemory = { activeHits: [hit] };
     for (let run = 0; run < 50; run += 1) {
       const coord = nextShot(shotsFrom([hit], "hit"), memory);
       expect(isOnBoard(coord!)).toBe(true);
@@ -78,7 +93,7 @@ describe("target mode", () => {
       { row: 4, col: 4 },
       { row: 4, col: 5 },
     ];
-    const memory: AiMemory = { mode: "target", activeHits: hits };
+    const memory: AiMemory = { activeHits: hits };
     for (let run = 0; run < 50; run += 1) {
       const coord = nextShot(shotsFrom(hits, "hit"), memory);
       expect(coord!.row).toBe(4);
@@ -91,7 +106,7 @@ describe("target mode", () => {
       { row: 4, col: 4 },
       { row: 5, col: 4 },
     ];
-    const memory: AiMemory = { mode: "target", activeHits: hits };
+    const memory: AiMemory = { activeHits: hits };
     for (let run = 0; run < 50; run += 1) {
       const coord = nextShot(shotsFrom(hits, "hit"), memory);
       expect(coord!.col).toBe(4);
@@ -104,7 +119,7 @@ describe("target mode", () => {
       { row: 4, col: 4 },
       { row: 4, col: 5 },
     ];
-    const memory: AiMemory = { mode: "target", activeHits: hits };
+    const memory: AiMemory = { activeHits: hits };
     const shots: Shot[] = [
       ...shotsFrom(hits, "hit"),
       { coord: { row: 4, col: 6 }, result: "miss" },
@@ -115,7 +130,7 @@ describe("target mode", () => {
   it("probes around the hit again when the whole line is spent", () => {
     // A vertical ship whose horizontal neighbours were tried first.
     const hits = [{ row: 4, col: 4 }];
-    const memory: AiMemory = { mode: "target", activeHits: hits };
+    const memory: AiMemory = { activeHits: hits };
     const shots: Shot[] = [
       ...shotsFrom(hits, "hit"),
       { coord: { row: 4, col: 3 }, result: "miss" },
@@ -125,18 +140,104 @@ describe("target mode", () => {
     expect(coord!.col).toBe(4);
     expect([3, 5]).toContain(coord!.row);
   });
+
+  it("keeps following the line when a neighbouring ship has also been hit", () => {
+    // Regression: hits forming an L — two along the ship being chased plus one
+    // on a ship beside it — used to fail the "are all the hits in line?" test,
+    // so the computer abandoned the line and went back to poking neighbours.
+    const neighbourShipHit = { row: 4, col: 5 };
+    // Hits are listed oldest first; the most recent is the one being chased.
+    const hits = [
+      neighbourShipHit,
+      { row: 5, col: 5 },
+      { row: 5, col: 4 },
+    ];
+    const memory: AiMemory = { activeHits: hits };
+    const shots = shotsFrom(hits, "hit");
+
+    const chosen = Object.keys(shotDistribution(shots, memory, 200));
+    expect(chosen.sort()).toEqual(["5,3", "5,6"]);
+  });
+
+  it("extends both lines when the hits form a corner either way", () => {
+    // The same L, but the most recent hit is the shared corner: the computer
+    // cannot tell which of the two lines is the ship, so it offers both.
+    const hits = [
+      { row: 5, col: 4 },
+      { row: 4, col: 5 },
+      { row: 5, col: 5 },
+    ];
+    const memory: AiMemory = { activeHits: hits };
+    const chosen = Object.keys(
+      shotDistribution(shotsFrom(hits, "hit"), memory, 400),
+    );
+    expect(chosen.sort()).toEqual(["3,5", "5,3", "5,6", "6,5"]);
+  });
+
+  it("falls back to another wounded ship when the chased one is boxed in", () => {
+    const boxedIn = { row: 0, col: 0 };
+    const otherShipHit = { row: 5, col: 5 };
+    // The most recent hit is the corner one, and both of its neighbours have
+    // already been fired at, so there is nothing left to try around it.
+    const memory: AiMemory = { activeHits: [otherShipHit, boxedIn] };
+    const shots: Shot[] = [
+      ...shotsFrom([otherShipHit, boxedIn], "hit"),
+      ...shotsFrom([
+        { row: 0, col: 1 },
+        { row: 1, col: 0 },
+      ]),
+    ];
+    for (let run = 0; run < 20; run += 1) {
+      expect(isAdjacent(nextShot(shots, memory)!, otherShipHit)).toBe(true);
+    }
+  });
+
+  it("does not favour a square merely because it borders two hits", () => {
+    // Regression: candidates were collected per hit without de-duplication, so
+    // the corner square below was offered twice and picked twice as often —
+    // and a corner is the least likely square to hold a ship.
+    const hits = [
+      { row: 5, col: 4 },
+      { row: 5, col: 5 },
+      { row: 4, col: 5 },
+    ];
+    const memory: AiMemory = { activeHits: hits };
+    // Every end of both lines is spent, so the computer falls back to probing
+    // neighbours — and (4,4) borders two of the hits.
+    const shots: Shot[] = [
+      ...shotsFrom(hits, "hit"),
+      ...shotsFrom([
+        { row: 5, col: 3 },
+        { row: 5, col: 6 },
+        { row: 3, col: 5 },
+        { row: 6, col: 5 },
+      ]),
+    ];
+    const counts = shotDistribution(shots, memory, 6000);
+    const corner = counts["4,4"] ?? 0;
+    const others = Object.entries(counts)
+      .filter(([key]) => key !== "4,4")
+      .map(([, count]) => count);
+    const average = others.reduce((sum, n) => sum + n, 0) / others.length;
+    expect(corner).toBeGreaterThan(average * 0.7);
+    expect(corner).toBeLessThan(average * 1.4);
+  });
 });
 
 describe("registerResult", () => {
-  it("switches to target mode on a hit", () => {
+  it("starts chasing after a hit", () => {
     const memory = registerResult(
       createAiMemory(),
       { row: 1, col: 1 },
       "hit",
       null,
     );
-    expect(memory.mode).toBe("target");
+    expect(isTargeting(memory)).toBe(true);
     expect(memory.activeHits).toHaveLength(1);
+  });
+
+  it("is not chasing anything to begin with", () => {
+    expect(isTargeting(createAiMemory())).toBe(false);
   });
 
   it("ignores a miss", () => {
@@ -153,7 +254,7 @@ describe("registerResult", () => {
     ];
     let memory = registerResult(createAiMemory(), cells[0], "hit", null);
     memory = registerResult(memory, cells[1], "hit", cells);
-    expect(memory.mode).toBe("hunt");
+    expect(isTargeting(memory)).toBe(false);
     expect(memory.activeHits).toHaveLength(0);
   });
 
@@ -166,7 +267,7 @@ describe("registerResult", () => {
     let memory = registerResult(createAiMemory(), neighbourHit, "hit", null);
     memory = registerResult(memory, destroyerCells[0], "hit", null);
     memory = registerResult(memory, destroyerCells[1], "hit", destroyerCells);
-    expect(memory.mode).toBe("target");
+    expect(isTargeting(memory)).toBe(true);
     expect(memory.activeHits).toEqual([neighbourHit]);
   });
 
@@ -209,7 +310,7 @@ describe("self play", () => {
         fired.add(coordKey(coord!));
 
         const outcome = attack(board, coord!);
-        expect(outcome.accepted).toBe(true);
+        if (!outcome.accepted) throw new Error("the computer repeated a shot");
         board = outcome.board;
         memory = registerResult(
           memory,

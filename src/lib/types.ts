@@ -53,14 +53,11 @@ export type Player = "player" | "computer";
 
 export type Phase = "placement" | "playerTurn" | "computerTurn" | "gameOver";
 
-export type AiMode = "hunt" | "target";
-
 /**
  * The computer's private notes. It is deliberately never given the defender's
  * ship positions, only what it could work out from its own shots.
  */
 export interface AiMemory {
-  mode: AiMode;
   /** Hits belonging to a ship that has not sunk yet. */
   activeHits: Coord[];
 }

@@ -1,27 +1,28 @@
 import { allShipsSunk, hasBeenShot, isSunk, sameCoord, shipAt } from "./board";
 import type { Board, Coord, Ship, ShotResult } from "./types";
 
-export interface AttackOutcome {
-  board: Board;
-  /** False when the square had already been fired at. */
-  accepted: boolean;
-  result: ShotResult;
-  sunkShip: Ship | null;
-  allSunk: boolean;
-}
+/**
+ * Either a shot that landed or a refusal. They are separate shapes so that a
+ * refused shot cannot be mistaken for a miss: the result of a shot that was
+ * never fired simply does not exist, and the compiler makes callers check
+ * `accepted` before they can read one.
+ */
+export type AttackOutcome =
+  | { accepted: false; board: Board }
+  | {
+      accepted: true;
+      board: Board;
+      result: ShotResult;
+      sunkShip: Ship | null;
+      allSunk: boolean;
+    };
 
 /**
  * Applies a shot without mutating the board it was given.
  */
 export function attack(board: Board, coord: Coord): AttackOutcome {
   if (hasBeenShot(board, coord)) {
-    return {
-      board,
-      accepted: false,
-      result: "miss",
-      sunkShip: null,
-      allSunk: false,
-    };
+    return { accepted: false, board };
   }
 
   const target = shipAt(board, coord);
@@ -44,8 +45,8 @@ export function attack(board: Board, coord: Coord): AttackOutcome {
   const sunkShip = updated && isSunk(updated) ? updated : null;
 
   return {
-    board: nextBoard,
     accepted: true,
+    board: nextBoard,
     result,
     sunkShip,
     allSunk: allShipsSunk(nextBoard),

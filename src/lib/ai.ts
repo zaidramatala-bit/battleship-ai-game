@@ -2,7 +2,16 @@ import { coordKey, isOnBoard, sameCoord } from "./board";
 import { BOARD_SIZE, type AiMemory, type Coord, type Shot } from "./types";
 
 export function createAiMemory(): AiMemory {
-  return { mode: "hunt", activeHits: [] };
+  return { activeHits: [] };
+}
+
+/**
+ * Whether the computer is chasing a wounded ship rather than searching. It is
+ * derived from the notes rather than stored alongside them, so the label and
+ * the behaviour cannot drift apart.
+ */
+export function isTargeting(memory: AiMemory): boolean {
+  return memory.activeHits.length > 0;
 }
 
 function neighbours(coord: Coord): Coord[] {
@@ -12,6 +21,17 @@ function neighbours(coord: Coord): Coord[] {
     { row: coord.row, col: coord.col - 1 },
     { row: coord.row, col: coord.col + 1 },
   ];
+}
+
+/** Removes repeats, so a square bordering two hits is not twice as likely. */
+function unique(coords: Coord[]): Coord[] {
+  const seen = new Set<string>();
+  return coords.filter((coord) => {
+    const key = coordKey(coord);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function pick(candidates: Coord[], random: () => number): Coord {
@@ -43,31 +63,41 @@ function activeCluster(hits: Coord[]): Coord[] {
   return cluster;
 }
 
+const AXES = [
+  { row: 0, col: 1 },
+  { row: 1, col: 0 },
+] as const;
+
 /**
- * Squares in line with two or more hits, just beyond each end of the line.
- * Returns an empty list when the hits do not share a row or a column.
+ * The squares just beyond each end of an unbroken run of hits through `seed`.
+ *
+ * The run is measured one axis at a time rather than by asking whether *every*
+ * hit shares a row or a column: a hit on a ship alongside the one being chased
+ * then no longer hides the line. If both axes hold a run, both are offered.
  */
-function lineEnds(hits: Coord[]): Coord[] {
-  if (hits.length < 2) return [];
+function lineEnds(hits: Coord[], seed: Coord): Coord[] {
+  const isHit = (coord: Coord) => hits.some((hit) => sameCoord(hit, coord));
+  const ends: Coord[] = [];
 
-  const sameRow = hits.every((hit) => hit.row === hits[0].row);
-  const sameCol = hits.every((hit) => hit.col === hits[0].col);
+  for (const axis of AXES) {
+    const reach = (sign: number) => {
+      let steps = 1;
+      const at = (count: number) => ({
+        row: seed.row + axis.row * sign * count,
+        col: seed.col + axis.col * sign * count,
+      });
+      while (isHit(at(steps))) steps += 1;
+      return { run: steps - 1, end: at(steps) };
+    };
 
-  if (sameRow) {
-    const cols = hits.map((hit) => hit.col);
-    return [
-      { row: hits[0].row, col: Math.min(...cols) - 1 },
-      { row: hits[0].row, col: Math.max(...cols) + 1 },
-    ];
+    const forward = reach(1);
+    const backward = reach(-1);
+    if (forward.run + backward.run > 0) {
+      ends.push(forward.end, backward.end);
+    }
   }
-  if (sameCol) {
-    const rows = hits.map((hit) => hit.row);
-    return [
-      { row: Math.min(...rows) - 1, col: hits[0].col },
-      { row: Math.max(...rows) + 1, col: hits[0].col },
-    ];
-  }
-  return [];
+
+  return unique(ends);
 }
 
 /**
@@ -101,13 +131,21 @@ export function nextShot(
   const available = (coord: Coord) =>
     isOnBoard(coord) && !fired.has(coordKey(coord));
 
-  // Target mode: extend along a known line first, then probe around the hits.
-  if (memory.activeHits.length > 0) {
-    const ends = lineEnds(activeCluster(memory.activeHits)).filter(available);
+  // Target mode: extend along a known line first, then probe around the ship
+  // currently being chased, and only then around any other wounded ship.
+  if (isTargeting(memory)) {
+    const cluster = activeCluster(memory.activeHits);
+
+    const ends = lineEnds(cluster, cluster[0]).filter(available);
     if (ends.length > 0) return pick(ends, random);
 
-    const adjacent = memory.activeHits.flatMap(neighbours).filter(available);
-    if (adjacent.length > 0) return pick(adjacent, random);
+    const nearCluster = unique(cluster.flatMap(neighbours)).filter(available);
+    if (nearCluster.length > 0) return pick(nearCluster, random);
+
+    const nearAny = unique(memory.activeHits.flatMap(neighbours)).filter(
+      available,
+    );
+    if (nearAny.length > 0) return pick(nearAny, random);
   }
 
   // Hunt mode.
@@ -137,8 +175,5 @@ export function registerResult(
     );
   }
 
-  return {
-    mode: activeHits.length > 0 ? "target" : "hunt",
-    activeHits,
-  };
+  return { activeHits };
 }

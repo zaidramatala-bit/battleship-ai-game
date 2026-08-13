@@ -156,3 +156,12 @@ describe("coordLabel", () => {
     expect(coordLabel({ row: 3, col: 2 })).toBe("C4");
   });
 });
+
+describe("randomBoard giving up", () => {
+  it("throws rather than looping forever when no placement can succeed", () => {
+    // A random source stuck at zero always proposes A1 horizontally, so only
+    // the first ship can ever be placed. The attempt and restart limits must
+    // end the search instead of spinning.
+    expect(() => randomBoard(() => 0)).toThrow(/unable to place the fleet/i);
+  });
+});

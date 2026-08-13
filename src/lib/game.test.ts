@@ -244,7 +244,7 @@ describe("winning", () => {
     state = {
       ...state,
       phase: "computerTurn",
-      aiMemory: { mode: "target", activeHits: [last] },
+      aiMemory: { activeHits: [last] },
     };
     // Force the AI onto the final square by leaving it as the only one open.
     const remaining: Coord[] = [];
@@ -260,7 +260,7 @@ describe("winning", () => {
     }
     state = {
       ...state,
-      aiMemory: { mode: "hunt", activeHits: [] },
+      aiMemory: { activeHits: [] },
       playerBoard: {
         ...state.playerBoard,
         shots: [
@@ -289,5 +289,35 @@ describe("new game", () => {
     expect(fresh.computerBoard.shots).toHaveLength(0);
     expect(fresh.log).toHaveLength(0);
     expect(fresh.winner).toBeNull();
+  });
+});
+
+describe("defensive branches", () => {
+  it("hands the turn back if the computer has nowhere left to fire", () => {
+    // Not reachable in a real game — a full board means someone has already
+    // won — but the reducer must not stall if it ever happens.
+    let state = readyGame();
+    const everySquare = [];
+    for (let row = 0; row < 10; row += 1) {
+      for (let col = 0; col < 10; col += 1) {
+        everySquare.push({ coord: { row, col }, result: "miss" as const });
+      }
+    }
+    state = {
+      ...state,
+      phase: "computerTurn",
+      playerBoard: { ...state.playerBoard, shots: everySquare },
+    };
+    const next = gameReducer(state, { type: "computerFire" });
+    expect(next.phase).toBe("playerTurn");
+    expect(next.log).toHaveLength(0);
+  });
+
+  it("ignores an action it does not recognise", () => {
+    const state = readyGame();
+    const next = gameReducer(state, {
+      type: "not-a-real-action",
+    } as unknown as GameAction);
+    expect(next).toBe(state);
   });
 });
