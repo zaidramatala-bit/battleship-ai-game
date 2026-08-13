@@ -20,7 +20,6 @@ import type {
 export type GameAction =
   | { type: "placeShip"; origin: Coord }
   | { type: "rotate" }
-  | { type: "selectShip"; index: number }
   | { type: "randomisePlacement" }
   | { type: "resetPlacement" }
   | { type: "playerFire"; coord: Coord }
@@ -67,15 +66,6 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
   switch (action.type) {
     case "newGame":
       return createInitialState();
-
-    case "selectShip": {
-      if (state.phase !== "placement") return state;
-      const alreadyPlaced = state.playerBoard.ships.length;
-      if (action.index < alreadyPlaced || action.index >= FLEET.length) {
-        return state;
-      }
-      return { ...state, placementShipIndex: action.index };
-    }
 
     case "rotate": {
       if (state.phase !== "placement") return state;

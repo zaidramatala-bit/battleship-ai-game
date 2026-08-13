@@ -16,7 +16,8 @@ npm run dev      # http://localhost:3000
 Other scripts:
 
 ```bash
-npm test         # unit + component tests (Vitest)
+npm test              # unit + component tests (Vitest)
+npm run test:coverage # the same, with a coverage report
 npm run lint
 npm run typecheck
 npm run build
@@ -70,9 +71,19 @@ milliseconds, including a few hundred simulated games.
   count (a degraded AI still wins, so the move-count assertion is what catches
   it).
 * `src/lib/game.test.ts` — turn sequencing, duplicate clicks, restart, win.
-* `src/components/Game.test.tsx` — the real UI, including the 700ms computer
-  pause and restarting mid-pause.
+* `src/lib/view.test.ts` — what each square looks like, including enemy ships
+  staying hidden until they are hit or the game ends.
+* `src/components/Game.test.tsx` — the real UI: placement, rotation, invalid
+  previews, `Clear`, firing, the 700ms computer pause, restarting mid-pause.
+* `src/components/GameOverBanner.test.tsx` — victory and defeat banners.
 * CI (`.github/workflows/ci.yml`) runs lint, typecheck, tests and build.
+
+76 tests, ~95% line coverage of `src` (the shortfall is `layout.tsx` and
+`page.tsx`, which only mount the app). Two things are deliberately *not*
+covered automatically and were verified by playing the game instead: a complete
+game played through the UI to a win banner — a hundred clicks at 700ms each is
+too slow for a test, and the reducer-level win and the banner component are
+tested separately — and the visual styling.
 
 ## Bug log
 
@@ -88,6 +99,10 @@ Real problems hit while building this, and what fixed them.
 
 Bug 5 was found by playing the game in a browser, not by the automated tests —
 it was a rules/fairness bug, not a crash.
+
+Coverage review also turned up an unused `selectShip` action in the reducer,
+left over from an earlier design where you picked a ship from a list. It was
+dead code with no way to reach it, so it was removed rather than tested.
 
 ## Known limitations
 

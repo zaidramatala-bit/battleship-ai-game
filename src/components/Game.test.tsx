@@ -52,6 +52,76 @@ describe("Game", () => {
     expect(screen.getByTestId("message")).toHaveTextContent(/Carrier placed/i);
   });
 
+  it("previews a rotated ship and places it vertically", async () => {
+    const user = userEvent.setup();
+    render(<Game />);
+    await user.click(screen.getByRole("button", { name: /rotate/i }));
+
+    const own = (label: string) =>
+      within(boards().yours).getByRole("button", {
+        name: new RegExp(`^${label} `),
+      });
+
+    await user.hover(own("C3"));
+    for (const label of ["C3", "C4", "C5", "C6", "C7"]) {
+      expect(own(label).getAttribute("data-view")).toBe("preview");
+    }
+
+    await user.click(own("C3"));
+    // The pointer is still over C3, where the next ship's preview now sits;
+    // move it away to see the placed ship itself.
+    await user.unhover(own("C3"));
+    for (const label of ["C3", "C4", "C5", "C6", "C7"]) {
+      expect(own(label).getAttribute("data-view")).toBe("ship");
+    }
+  });
+
+  it("shows an invalid preview where the ship would not fit", async () => {
+    const user = userEvent.setup();
+    render(<Game />);
+    const own = (label: string) =>
+      within(boards().yours).getByRole("button", {
+        name: new RegExp(`^${label} `),
+      });
+
+    // Carrier is 5 long and horizontal: starting at H1 runs off the board.
+    await user.hover(own("H1"));
+    expect(own("H1").getAttribute("data-view")).toBe("invalid");
+
+    // Clicking an illegal square places nothing.
+    await user.click(own("H1"));
+    expect(screen.getByTestId("phase")).toHaveTextContent(/deploy your fleet/i);
+    expect(
+      within(boards().yours).queryAllByRole("button", { name: /ship$/ }),
+    ).toHaveLength(0);
+  });
+
+  it("places the whole fleet by hand, then starts play; Clear undoes it", async () => {
+    const user = userEvent.setup();
+    render(<Game />);
+    const own = (label: string) =>
+      within(boards().yours).getByRole("button", {
+        name: new RegExp(`^${label} `),
+      });
+
+    // One ship per row, all horizontal from column A.
+    for (const label of ["A1", "A3", "A5", "A7", "A9"]) {
+      await user.click(own(label));
+    }
+
+    expect(screen.getByTestId("phase")).toHaveTextContent(/your turn/i);
+    expect(
+      within(boards().yours).getAllByRole("button", { name: /ship$/ }),
+    ).toHaveLength(5 + 4 + 3 + 3 + 2);
+
+    await user.click(screen.getAllByRole("button", { name: /^new game$/i })[0]);
+    await user.click(own("A1"));
+    await user.click(screen.getByRole("button", { name: /clear/i }));
+    expect(
+      within(boards().yours).queryAllByRole("button", { name: /ship$/ }),
+    ).toHaveLength(0);
+  });
+
   it("marks a fired cell and disables it", async () => {
     const user = userEvent.setup();
     render(<Game />);
