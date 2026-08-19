@@ -1,17 +1,25 @@
-# battleship-ai
-
-Battleship game built with Devin for the Cognition interview exercise.
+# Battleship
 
 A browser-based Battleship game: one human player against a hunt-and-target
 computer opponent. No accounts, no database, no backend — the whole game runs
 in the browser and can be deployed as a static Next.js app.
 
-## Running it
+Built with Next.js 15, React 19, TypeScript, Tailwind CSS 4 and Vitest.
+
+## Running it locally
+
+You need [Node.js](https://nodejs.org) 20 or newer (`node --version` to check);
+npm comes with it.
 
 ```bash
+git clone https://github.com/zaidramatala-bit/battleship-ai-game.git
+cd battleship-ai-game
 npm install
-npm run dev      # http://localhost:3000
+npm run dev
 ```
+
+Then open <http://localhost:3000> in your browser. That is the whole setup —
+there is nothing to configure, no environment variables and no API keys.
 
 Other scripts:
 
@@ -20,8 +28,15 @@ npm test              # unit + component tests (Vitest)
 npm run test:coverage # the same, with a coverage report
 npm run lint
 npm run typecheck
-npm run build
+npm run build         # production build
+npm start             # serve the production build
 ```
+
+### Deploying
+
+The app is entirely client-side, so any static host works. On
+[Vercel](https://vercel.com/new), importing this repository and accepting the
+defaults is enough — no settings, no environment variables.
 
 ## How to play
 
