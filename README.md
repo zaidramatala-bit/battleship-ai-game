@@ -34,9 +34,19 @@ npm start             # serve the production build
 
 ### Deploying
 
-The app is entirely client-side, so any static host works. On
-[Vercel](https://vercel.com/new), importing this repository and accepting the
-defaults is enough — no settings, no environment variables.
+The app is entirely client-side, so it ships as plain static files. Pushing to
+`main` builds it and publishes it to GitHub Pages
+(`.github/workflows/pages.yml`), which requires *Settings → Pages → Source:
+GitHub Actions* on the repository.
+
+The Pages build sets `GITHUB_PAGES=true`, which switches `next.config.ts` to a
+static export served from the `/battleship-ai-game/` sub-path. Local
+development and any other host are unaffected. To produce the same files
+locally:
+
+```bash
+GITHUB_PAGES=true npm run build   # writes ./out
+```
 
 ## How to play
 
